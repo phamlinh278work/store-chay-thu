@@ -201,10 +201,11 @@
   // tự chuyển thẻ mỗi 6 giây khi khối đang trên màn hình; bấm tay thì dừng hẳn
   let cur = 0, timer = null, manual = false, visible = false;
   const bar = (i) => { xem.querySelectorAll('.pz-ga-bar').forEach((b) => b.remove()); if (!manual && !reduced) { const b = document.createElement('span'); b.className = 'pz-ga-bar'; list[i].appendChild(b); } };
-  const go = (i) => { cur = (i + list.length) % list.length; show(cur); bar(cur); };
+  const go = (i) => { cur = (i + list.length) % list.length; show(cur); bar(cur); list.forEach((li, j) => li.setAttribute('aria-selected', j === cur ? 'true' : 'false')); };
   const arm = () => { clearTimeout(timer); if (manual || reduced || !visible) return; timer = setTimeout(() => go(cur + 1), 6000); };
   const stop = () => { manual = true; clearTimeout(timer); xem.querySelectorAll('.pz-ga-bar').forEach((b) => b.remove()); };
-  list.forEach((li, j) => { li.setAttribute('role', 'button'); li.tabIndex = 0; li.addEventListener('click', () => { stop(); go(j); }); li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stop(); go(j); } }); });
+  { const ol = xem.querySelector('.pz-ga-list'); if (ol) ol.setAttribute('role', 'tablist'); }
+  list.forEach((li, j) => { li.setAttribute('role', 'tab'); li.setAttribute('aria-selected', li.classList.contains('on') ? 'true' : 'false'); li.tabIndex = 0; li.addEventListener('click', () => { stop(); go(j); }); li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stop(); go(j); } }); });
   const _show = show;
   const showAndArm = (i) => { _show(i); arm(); };
   // ghi đè show để mỗi lần đổi thẻ lại hẹn giờ
