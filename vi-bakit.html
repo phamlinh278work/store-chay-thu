@@ -257,4 +257,133 @@
   x.addEventListener('mouseleave', () => arm());
   new IntersectionObserver((es) => es.forEach((e) => { visible = e.isIntersecting; if (visible) { bar(); arm(); } else { clearTimeout(timer); } }), { threshold: 0.35 }).observe(x);
 })();
+</script><script>// Chuyển động tự chạy cho trang sản phẩm (01/11, Linh: "check toàn bộ xem chỗ nào thêm được automation thì thêm đi").
+// Gắn cuối trang trong snap3.py (Reqwise Figma), snap-bakit.py, snap-studio.py; khối nào có trên trang thì chạy khối đó.
+// Chữ trong HTML luôn là trạng thái cuối, nên tắt JS hay máy giảm chuyển động vẫn đọc đủ; vòng lặp chỉ chạy khi khối trên màn hình.
+(() => {
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const vi = (document.documentElement.lang || '').startsWith('vi');
+  const css = [];
+  // chạy fn khi el vào màn hình, gọi stop khi rời đi
+  const whenVisible = (el, start, stop) => new IntersectionObserver((es) => es.forEach((e) => (e.isIntersecting ? start() : stop())), { threshold: 0.35 }).observe(el);
+
+  // ① thanh menu phụ: gạch chân mục đang xem khi cuộn
+  const nav = [...document.querySelectorAll('nav')].find((n) => n.querySelectorAll('a[href^="#"]').length > 1);   // menu phụ của sản phẩm, không phải menu chính
+  const links = nav ? [...nav.querySelectorAll('a[href^="#"]')] : [];
+  if (links.length > 1) {
+    nav.classList.add('sp-nav');
+    const pairs = links.map((a) => [a, a.getAttribute('href').length > 1 ? document.getElementById(a.getAttribute('href').slice(1)) : null]).filter(([a, s], i) => s || i === 0);
+    const spy = () => {
+      // khối gần nhất đã cuộn qua mốc 45% màn hình (không theo thứ tự link, vì menu trang Figma xếp khác thứ tự khối)
+      let cur = pairs[0][0], best = -Infinity;
+      pairs.forEach(([a, s]) => { const t = s ? s.getBoundingClientRect().top : -Infinity; if (s && t <= innerHeight * 0.45 && t > best) { best = t; cur = a; } });
+      if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) cur = pairs[pairs.length - 1][0];
+      pairs.forEach(([a]) => a.classList.toggle('sp-on', a === cur));
+    };
+    addEventListener('scroll', spy, { passive: true }); spy();
+    css.push(`.sp-nav a{position:relative;font-weight:500!important;color:var(--text-secondary)!important;transition:color .2s}
+    .sp-nav a.sp-on{color:var(--text-primary)!important}
+    .sp-nav a::after{content:"";position:absolute;left:0;right:0;bottom:-17px;height:2px;border-radius:2px;background:currentColor;transform:scaleX(0);transition:transform .25s}
+    .sp-nav a.sp-on::after{transform:scaleX(1)}`);
+  }
+
+  // vòng lặp bước: thẻ k sáng lên, có thanh chạy; dùng cho Studio "Cách làm", BA-Kit "Một ngày", "Cài vào đâu"
+  const cycle = (box, items, cls, every, onStep, onStop) => {
+    let k = -1, t = null;
+    const tick = () => { k = (k + 1) % items.length; items.forEach((el, i) => { el.classList.toggle('on', i === k); el.classList.toggle('done', i < k); }); onStep && onStep(k); };
+    items.forEach((el) => { el.classList.add(cls); el.insertAdjacentHTML('beforeend', '<span class="ar-bar" aria-hidden="true"></span>'); });
+    whenVisible(box, () => { if (!t) { tick(); t = setInterval(tick, every); } }, () => { clearInterval(t); t = null; k = -1; items.forEach((el) => el.classList.remove('on', 'done')); onStop && onStop(); });
+  };
+  css.push(`.ar-bar{position:absolute;left:0;bottom:0;height:3px;width:0;border-radius:0 3px 3px 0;background:var(--ar,#111113);pointer-events:none}
+  .on>.ar-bar{animation:arbar var(--ar-t,2s) linear forwards}@keyframes arbar{to{width:100%}}`);
+
+  if (!reduced) {
+    // ② Studio · Cách làm: 4 bước sáng lần lượt, câu mẫu của bước đang sáng tự gõ lại
+    const how = document.getElementById('how'); const steps = how ? [...how.querySelectorAll('ol > li')] : [];
+    if (steps.length) {
+      let typing = null;
+      const codes = steps.map((li) => li.querySelector('p.font-mono'));
+      codes.forEach((c) => { if (c) c.dataset.full = c.textContent; });
+      const full = () => { clearInterval(typing); codes.forEach((c) => { if (c) c.textContent = c.dataset.full; }); };
+      cycle(how, steps, 'ah-step', 2200, (k) => {
+        full(); const c = codes[k]; if (!c) return; let n = 0; c.textContent = '';
+        typing = setInterval(() => { n++; c.textContent = c.dataset.full.slice(0, n); if (n >= c.dataset.full.length) clearInterval(typing); }, 26);
+      }, full);
+      css.push(`.ah-step{position:relative;overflow:hidden;--ar:var(--studio);--ar-t:2.2s;transition:border-color .3s,box-shadow .3s}
+      .ah-step.on{border-color:var(--studio)!important;box-shadow:0 12px 28px rgba(17,17,19,.08)}
+      .ah-step>span:first-child{transition:box-shadow .3s}
+      .ah-step.on>span:first-child{box-shadow:0 0 0 6px color-mix(in srgb,var(--studio) 22%,transparent)}
+      .ah-step.on p.font-mono::after{content:"";display:inline-block;width:1px;height:1em;margin-left:2px;background:currentColor;vertical-align:-2px;animation:arblink .8s steps(2) infinite}
+      @keyframes arblink{to{opacity:0}}
+      html.dark .ah-step.on{box-shadow:none}`);
+    }
+
+    // ③ Studio · Khách đổi một dòng: tài liệu chuyển từ "chờ sửa" sang "đã cập nhật" lần lượt, số đếm chạy tới 18/18
+    const docs = document.getElementById('documents'); const rows = docs ? [...docs.querySelectorAll('ul > li')] : [];
+    if (rows.length) {
+      const list = rows[0].parentElement, cr = list.previousElementSibling;
+      const st = rows.map((li) => li.querySelector('.text-success')); const DONE = st.map((s) => s && s.textContent);
+      const W = vi ? ['chờ sửa', 'đang sửa…'] : ['pending', 'updating…'];
+      const fr = rows[0].querySelector('s'), frNew = fr && fr.nextElementSibling;
+      list.insertAdjacentHTML('afterend', '<p class="cr-count" aria-hidden="true"></p>');
+      const count = list.nextElementSibling;
+      const setCount = (n) => { count.innerHTML = n >= 18 ? (vi ? '<b>18/18</b> tài liệu khớp' : '<b>18/18</b> documents match') : (vi ? `Đang cập nhật <b>${n}/18</b> tài liệu` : `Updating <b>${n}/18</b> documents`); count.classList.toggle('ok', n >= 18); };
+      let timers = [];
+      const reset = () => {
+        timers.forEach(clearTimeout); timers = [];
+        rows.forEach((li, i) => { li.classList.remove('cr-doing', 'cr-done'); li.classList.add('cr-row'); if (st[i]) { st[i].textContent = W[0]; st[i].classList.add('cr-wait'); } });
+        if (fr) { fr.classList.add('cr-nos'); frNew.classList.add('cr-hide'); }
+        cr && cr.classList.remove('cr-ping'); setCount(0);
+      };
+      const finish = () => { timers.forEach(clearTimeout); timers = []; rows.forEach((li, i) => { li.classList.remove('cr-doing'); if (st[i]) { st[i].textContent = DONE[i]; st[i].classList.remove('cr-wait'); } }); if (fr) { fr.classList.remove('cr-nos'); frNew.classList.remove('cr-hide'); } count.textContent = ''; };
+      const play = () => {
+        reset();
+        timers.push(setTimeout(() => cr && cr.classList.add('cr-ping'), 300));
+        rows.forEach((li, i) => {
+          const at = 900 + i * 750;
+          timers.push(setTimeout(() => { li.classList.add('cr-doing'); if (st[i]) st[i].textContent = W[1]; }, at));
+          timers.push(setTimeout(() => {
+            li.classList.remove('cr-doing'); li.classList.add('cr-done');
+            if (st[i]) { st[i].textContent = DONE[i]; st[i].classList.remove('cr-wait'); }
+            if (i === 0 && fr) { fr.classList.remove('cr-nos'); frNew.classList.remove('cr-hide'); }
+            setCount(Math.round(18 * (i + 1) / rows.length));
+          }, at + 450));
+        });
+        timers.push(setTimeout(play, 900 + rows.length * 750 + 3200));
+      };
+      whenVisible(docs, () => { if (!timers.length) play(); }, finish);
+      css.push(`.cr-row{transition:background-color .3s,box-shadow .3s}
+      .cr-row.cr-doing{background:var(--studio-tint)!important;box-shadow:inset 3px 0 0 var(--studio)}
+      .cr-wait{color:var(--text-muted)!important}
+      .cr-done .text-success{display:inline-block;animation:crpop .45s cubic-bezier(.16,1,.3,1)}@keyframes crpop{0%{transform:scale(.8)}50%{transform:scale(1.15)}100%{transform:none}}
+      .cr-nos{text-decoration:none!important;color:var(--text-primary)!important}.cr-hide{opacity:0}
+      .cr-row s+span{transition:opacity .3s}
+      .cr-ping{animation:crping 1s ease-out}@keyframes crping{0%{box-shadow:-3px 0 0 0 rgba(251,106,26,.5)}100%{box-shadow:-3px 0 0 10px rgba(251,106,26,0)}}
+      .cr-count{margin:14px 2px 0;font-size:13.5px;line-height:20px;color:var(--text-secondary);min-height:20px}.cr-count b{color:var(--text-primary)}.cr-count.ok,.cr-count.ok b{color:var(--success,#16a34a)}`);
+    }
+
+    // ④ BA-Kit · Một ngày làm việc: các mốc giờ sáng lần lượt như đang trôi qua một ngày
+    const day = document.getElementById('day'); const slots = day ? [...day.querySelectorAll('ul > li')] : [];
+    if (slots.length) {
+      cycle(day, slots, 'dy-slot', 2000);
+      css.push(`.dy-slot{position:relative;overflow:hidden;--ar:var(--bakit);transition:border-color .3s,box-shadow .3s}
+      .dy-slot.on{border-color:var(--bakit)!important;box-shadow:0 12px 28px rgba(17,17,19,.08)}
+      .dy-slot .font-mono:first-child{transition:color .3s}
+      .dy-slot.on .font-mono:first-child{color:var(--bakit-ink)!important;font-weight:700}
+      html.dark .dy-slot.on{box-shadow:none}`);
+    }
+
+    // ⑤ BA-Kit · Cài vào đâu: viền xanh chuyển qua 3 khung, cây thư mục khung đang sáng hiện từng dòng
+    const pre = [...document.querySelectorAll('main section pre')]; const panes = pre.map((p) => p.parentElement);
+    if (panes.length === 3 && panes.every((p) => p.className.includes('bg-[#16171B]'))) {
+      panes.forEach((p) => p.className = p.className.replace(/\s*outline-\[[^\]]+\]/g, ''));
+      cycle(panes[0].parentElement, panes, 'in-pane', 2600);
+      css.push(`.in-pane{position:relative;overflow:hidden;--ar:#2D8CFF;--ar-t:2.6s;outline:3px solid transparent;transition:outline-color .3s}
+      .in-pane.on{outline-color:#2D8CFF}
+      .in-pane.on pre{animation:inwipe .9s steps(6,end)}@keyframes inwipe{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0)}}`);
+    }
+  }
+
+  if (css.length) { const s = document.createElement('style'); s.textContent = css.join('\n'); document.head.appendChild(s); }
+})();
 </script></body></html>
